@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_DATABASE_URL")
+}
+
+/// A person using Inlooped. Slack columns carried over from the proven
+/// opennotepad integration — the OAuth flow writes exactly these.
+model users {
+  id         Int       @id @default(autoincrement())
+  email      String    @unique @db.VarChar(255)
+  password   String
+  name       String?   @db.VarChar(100)
+  created_at DateTime? @default(now()) @db.Timestamp(6)
+  updated_at DateTime? @default(now()) @db.Timestamp(6)
+
+  slackAccessToken String?
+  slackUserId      String?
+  slackTeamId      String?
+  slackEnabled     Boolean @default(false)
+  slackTimezone    String? @default("UTC")
+
+  items   WorkItem[]
+  entries JournalEntry[]
+  queries AgentQuery[]
+}
+
+enum ItemKind {
+  TASK
+  REFERENCE
+  WAITING
+  REMEMBER
+}
+
+enum ItemStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+/// Everything the user forwarded, after the agent understood it.
+/// None of these field names are ever shown to the user (product principle §7).
+model WorkItem {
+  id     String     @id @default(uuid())
+  userId Int
+  kind   ItemKind
+  status ItemStatus @default(OPEN)
+
+  /// Agent-written, short. This is the collapsed row.
+  title String
+  /// Agent-written, 1–2 sentences. Revealed on expand.
+  detail String?
+
+  /// Verbatim forwarded text — never shown, but it is what we search.
+  sourceText    String  @db.Text
+  /// sha256(userId + normalized sourceText). Exact-duplicate gate.
+  sourceHash    String
+  sourceApp     String  @default("slack")
+  /// Deep link behind "Open in Slack".
+  sourceUrl     String?
+  sourceChannel String?
+
+  personName String?
+  topic      String?
+
+  confidence   Float @default(0)
+  messageCount Int   @default(1)
+
+  /// 0–1, written ONCE at ingest, never decayed. Answers "would this still
+  /// matter if it were old?". Decay is applied at read time by the scorers.
+  importance Float @default(0.5)
+
+  /// Precomputed by SurfaceService; drives "Things for today". Never an LLM call.
+  isPinned       Boolean   @default(false)
+  surfaceScore   Float     @default(0)
+  lastSurfacedAt DateTime?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  /// Generated column — maintained by Postgres, see the initial migration.
+  searchVector Unsupported("tsvector")?
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceHash])
+  @@index([userId, status, surfaceScore])
+  @@index([userId, isPinned])
+  @@index([userId, personName])
+  @@index([userId, topic])
+  @@index([userId, occurredAt])
+}
+
+/// Deliberately separate from WorkItem: journal entries are never classified,
+/// never scored, and never surfaced on Agent (§4).
+model JournalEntry {
+  id        String   @id @default(uuid())
+  userId    Int
+  day       DateTime @db.Date
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, day])
+  @@index([userId, day])
+}
+
+/// Answer cache + audit trail. A hit here costs zero tokens, which is what
+/// makes the fixed suggestion pills effectively free.
+model AgentQuery {
+  id           String   @id @default(uuid())
+  userId       Int
+  question     String   @db.Text
+  questionHash String
+  answer       String   @db.Text
+  itemIds      Json     @default("[]")
+  /// Which path answered: "cache" | "router" | "llm" | "empty"
+  route        String   @default("llm")
+  createdAt    DateTime @default(now())
+
+  user users @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, questionHash, createdAt])
+}

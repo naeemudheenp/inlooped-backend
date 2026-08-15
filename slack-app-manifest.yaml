@@ -1,0 +1,69 @@
+# Inlooped — Slack app manifest (SOCKET MODE — no public URL needed)
+#
+# Socket Mode opens a WebSocket from your backend to Slack, so there are no
+# request URLs to host or verify. Everything below works from localhost.
+#
+# ── ONE-TIME SETUP (api.slack.com/apps > Inlooped) ──────────────────────────
+# 1. App Manifest         → paste this file, Save.
+# 2. Basic Information    → App-Level Tokens → "Generate Token and Scopes":
+#                             name: socket, scope: connections:write → Generate.
+#                           Copy the xapp-... token into SLACK_APP_TOKEN in .env.
+# 3. Install App          → (re)install to your workspace to grant scopes.
+# 4. Restart the backend  → it logs "Slack Socket Mode connected".
+#
+# Then: DM the bot, 📌-react a message, use the "Send to Inlooped" shortcut,
+# or run /remember — all four land in the same ingest pipeline.
+
+display_information:
+  name: Inlooped
+  description: Your work assistant. Send it things; ask about them later.
+  background_color: "#0a0a0b"
+
+features:
+  bot_user:
+    display_name: Inlooped
+    always_online: true
+  app_home:
+    # REQUIRED so you can DM the bot. Without it Slack shows
+    # "Sending messages to this app has been turned off."
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  shortcuts:
+    - name: Send to Inlooped
+      type: message
+      callback_id: send_to_inlooped
+      description: Send this message to Inlooped
+  slash_commands:
+    - command: /remember
+      description: Ask Inlooped to remember something
+      usage_hint: "check the pricing proposal when I'm back"
+      should_escape: false
+
+oauth_config:
+  redirect_urls:
+    - http://localhost:3003/integrations/slack/oauth/callback
+  scopes:
+    user:
+      - chat:write
+    bot:
+      - chat:write
+      - im:write
+      - im:history
+      - channels:history
+      - groups:history
+      - users:read
+      - reactions:read
+      - commands
+
+settings:
+  # Socket Mode delivers all of these over the WebSocket — no request_url.
+  event_subscriptions:
+    bot_events:
+      - message.im
+      - reaction_added
+  interactivity:
+    is_enabled: true
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false
