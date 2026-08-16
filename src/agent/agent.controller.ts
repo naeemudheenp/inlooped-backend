@@ -5,6 +5,8 @@ import { LLM_SERVICE, LlmService } from '../llm/llm.types';
 import { MeteredLlmService } from '../llm/metered-llm.service';
 import { SurfaceService } from '../surface/surface.service';
 import { AgentService } from './agent.service';
+import { IngestService } from '../ingest/ingest.service';
+import { GoogleCalendarService } from '../integrations/google/google-calendar.service';
 
 export class AskDto {
   @IsString()
@@ -13,10 +15,25 @@ export class AskDto {
   question!: string;
 }
 
+export class CaptureDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  text!: string;
+
+  @IsOptional()
+  @IsString()
+  date?: string;
+}
+
 export class TodayQueryDto {
   @IsOptional()
   @IsString()
   limit?: string;
+
+  @IsOptional()
+  @IsString()
+  date?: string;
 }
 
 @Controller('agent')
@@ -25,17 +42,67 @@ export class AgentController {
   constructor(
     private readonly agent: AgentService,
     private readonly surface: SurfaceService,
+    private readonly ingest: IngestService,
+    private readonly googleCalendar: GoogleCalendarService,
     @Inject(LLM_SERVICE) private readonly llm: LlmService,
   ) {}
 
-  /** The home list & grouped feed. No tokens, ever. */
+
+  /** The home list & grouped feed. Merges Google Calendar events for target date. */
   @Get('today')
   async today(@Req() req: AuthenticatedRequest, @Query() query: TodayQueryDto) {
     const uid = userId(req);
     const limit = Math.min(Math.max(Number(query.limit) || 6, 1), 20);
-    const items = await this.surface.today(uid, limit);
-    const feed = await this.surface.getFeed(uid);
-    return { items, feed };
+    const items = await this.surface.today(uid, limit, query.date);
+    const feed = await this.surface.getFeed(uid, query.date);
+
+    // Fetch Google Calendar events for the requested date (or today)
+    const calEvents = await this.googleCalendar.getEventsForDay(uid, query.date).catch(() => []);
+    const calendarWorkItems = calEvents.map((evt) => ({
+      id: `gcal-${evt.id}`,
+      title: evt.title,
+      detail: evt.description || (evt.location ? `Location: ${evt.location}` : null),
+      meta: evt.isAllDay ? 'All Day' : 'Google Calendar',
+      kind: 'EVENT',
+      status: 'OPEN',
+      sourceUrl: evt.hangoutLink || evt.htmlLink || null,
+      sourceApp: 'google_calendar',
+      sourceChannel: null,
+      personName: null,
+      messageCount: 1,
+      isPinned: false,
+      occurredAt: evt.startTime,
+    }));
+
+    // Merge calendar events into today feed items
+    const mergedToday = [...calendarWorkItems, ...feed.today];
+    const mergedItems = [...calendarWorkItems, ...items];
+
+    return {
+      items: mergedItems,
+      feed: {
+        pinned: feed.pinned,
+        today: mergedToday,
+        recent: feed.recent,
+      },
+    };
+  }
+
+  @Post('capture')
+  async capture(@Req() req: AuthenticatedRequest, @Body() body: CaptureDto) {
+    const occurredAt = body.date ? new Date(body.date) : undefined;
+    const outcome = await this.ingest.capture({
+      userId: userId(req),
+      text: body.text,
+      sourceApp: 'user', // Better label for direct notes
+      occurredAt,
+    });
+    return {
+      ok: true,
+      item: this.surface.present(outcome.item),
+      route: outcome.route,
+      usedLlm: outcome.usedLlm,
+    };
   }
 
   @Post('ask')

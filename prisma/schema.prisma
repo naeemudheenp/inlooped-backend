@@ -24,6 +24,11 @@ model users {
   slackEnabled     Boolean @default(false)
   slackTimezone    String? @default("UTC")
 
+  googleAccessToken  String?
+  googleRefreshToken String?
+  googleCalendarId   String?  @default("primary")
+  googleEnabled      Boolean  @default(false)
+
   items   WorkItem[]
   entries JournalEntry[]
   queries AgentQuery[]

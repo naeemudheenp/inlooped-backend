@@ -279,7 +279,7 @@ export class IngestService {
 }
 
 const GREETINGS_NOISE = new Set([
-  'hi', 'hello', 'hey', 'dfda', 'test', 'testing', 'hi welcome', 'welcome', 'thanks', 'thank you', 'ok', 'okay', 'yep', 'nope', 'bye', 'good morning', 'good evening', 'good night'
+  'hi', 'hello', 'hey', 'dfda', 'test', 'testing', 'hi welcome', 'welcome', 'thanks', 'thank you', 'ok', 'okay', 'ok thanks', 'yep', 'nope', 'bye', 'good morning', 'good evening', 'good night'
 ]);
 
 function isTrivial(text: string): boolean {

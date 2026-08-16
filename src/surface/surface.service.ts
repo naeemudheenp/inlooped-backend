@@ -43,9 +43,28 @@ export class SurfaceService {
    * Grouped surface feed: Pinned at top, Today's items, and Recent active items.
    * Includes both OPEN and RESOLVED items so resolved items remain visible.
    */
-  async getFeed(userId: number): Promise<GroupedSurfaceFeed> {
+  async getFeed(userId: number, targetDate?: string): Promise<GroupedSurfaceFeed> {
+    const whereClause: any = { userId, status: { in: ['OPEN', 'RESOLVED'] } };
+    
+    let startOfTargetDate: Date;
+    let endOfTargetDate: Date | null = null;
+    
+    if (targetDate) {
+      startOfTargetDate = new Date(targetDate);
+      endOfTargetDate = new Date(startOfTargetDate);
+      endOfTargetDate.setDate(endOfTargetDate.getDate() + 1);
+      
+      whereClause.occurredAt = {
+        gte: startOfTargetDate,
+        lt: endOfTargetDate,
+      };
+    } else {
+      const now = new Date();
+      startOfTargetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    }
+
     const allItems = await this.prisma.workItem.findMany({
-      where: { userId, status: { in: ['OPEN', 'RESOLVED'] } },
+      where: whereClause,
       orderBy: [{ isPinned: 'desc' }, { occurredAt: 'desc' }],
       take: 50,
     });
@@ -54,14 +73,11 @@ export class SurfaceService {
     const today: SurfacedItem[] = [];
     const recent: SurfacedItem[] = [];
 
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
     for (const item of allItems) {
       const surfaced = this.present(item);
       if (item.isPinned) {
         pinned.push(surfaced);
-      } else if (item.occurredAt >= startOfToday) {
+      } else if (item.occurredAt >= startOfTargetDate && (!endOfTargetDate || item.occurredAt < endOfTargetDate)) {
         today.push(surfaced);
       } else {
         recent.push(surfaced);
@@ -71,9 +87,21 @@ export class SurfaceService {
     return { pinned, today, recent };
   }
 
-  async today(userId: number, limit = DEFAULT_LIMIT): Promise<SurfacedItem[]> {
+  async today(userId: number, limit = DEFAULT_LIMIT, targetDate?: string): Promise<SurfacedItem[]> {
+    const whereClause: any = { userId, status: { in: ['OPEN', 'RESOLVED'] } };
+    
+    if (targetDate) {
+      const start = new Date(targetDate);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      whereClause.occurredAt = {
+        gte: start,
+        lt: end,
+      };
+    }
+
     const items = await this.prisma.workItem.findMany({
-      where: { userId, status: { in: ['OPEN', 'RESOLVED'] } },
+      where: whereClause,
       orderBy: [{ isPinned: 'desc' }, { surfaceScore: 'desc' }],
       take: limit,
     });

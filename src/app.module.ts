@@ -14,6 +14,7 @@ import { SurfaceModule } from './surface/surface.module';
 import { AgentModule } from './agent/agent.module';
 import { JournalModule } from './journal/journal.module';
 import { SlackModule } from './integrations/slack/slack.module';
+import { GoogleCalendarModule } from './integrations/google/google-calendar.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SlackModule } from './integrations/slack/slack.module';
     AgentModule,
     JournalModule,
     SlackModule,
+    GoogleCalendarModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
