@@ -20,7 +20,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "seed:slack": "ts-node scripts/seed-slack-test-data.ts",
-    "post:slack": "ts-node scripts/post-to-slack.ts"
+    "post:slack": "ts-node scripts/post-to-slack.ts",
+    "bootstrap:prod": "./scripts/bootstrap-prod.sh"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
