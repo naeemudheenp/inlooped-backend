@@ -41,7 +41,7 @@ export class SlackService {
     const params = new URLSearchParams({
       client_id: process.env.SLACK_CLIENT_ID ?? '',
       scope: BOT_SCOPES,
-      user_scope: 'chat:write',
+      user_scope: 'chat:write,search:read,channels:history,groups:history,im:history,mpim:history,channels:read,groups:read,im:read,mpim:read',
       state,
       redirect_uri: redirectUri,
     });
@@ -142,6 +142,7 @@ export class SlackService {
   
     // Correct values
     const botToken = data.access_token;         // ✔ xoxb bot token
+    const userToken = data.authed_user?.access_token; // ✔ xoxp user token
     const humanUserId = data.authed_user.id;    // ✔ Uxxxxxx
     const teamId = data.team.id;
   
@@ -150,6 +151,7 @@ export class SlackService {
       where: { id: Number(userId) },
       data: {
         slackAccessToken: botToken,      // bot token (use this to send messages)
+        slackUserToken: userToken,        // user token (use this to search/read messages)
         slackUserId: humanUserId,        // HUMAN user ID (open DM with this)
         slackTeamId: teamId,
         slackEnabled: true,
@@ -304,5 +306,105 @@ export class SlackService {
       console.error('Failed to post fallback DM message:', fallbackData);
     }
   }
-  
+
+  async listChannels(botToken: string): Promise<any[]> {
+    let channels: any[] = [];
+    let cursor: string | undefined;
+    do {
+      const params = new URLSearchParams({
+        types: 'public_channel,private_channel,im,mpim',
+        limit: '100',
+        ...(cursor ? { cursor } : {}),
+      });
+      const res = await fetch(`https://slack.com/api/conversations.list?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${botToken}` },
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        console.error(`Slack API error in conversations.list: ${data.error}`);
+        break;
+      }
+      channels = channels.concat(data.channels || []);
+      cursor = data.response_metadata?.next_cursor;
+    } while (cursor);
+    return channels;
+  }
+
+  async listUsers(botToken: string): Promise<Record<string, string>> {
+    const res = await fetch(`https://slack.com/api/users.list`, {
+      headers: { Authorization: `Bearer ${botToken}` },
+    });
+    const data = await res.json();
+    if (!data.ok) return {};
+    const map: Record<string, string> = {};
+    for (const member of data.members || []) {
+      map[member.id] = member.profile?.real_name || member.name || member.id;
+    }
+    return map;
+  }
+
+  async getChannelHistory(
+    token: string,
+    channelId: string,
+    oldest: string,
+    latest: string,
+  ): Promise<any[]> {
+    const params = new URLSearchParams({
+      channel: channelId,
+      oldest,
+      latest,
+      limit: '100',
+    });
+    const res = await fetch(`https://slack.com/api/conversations.history?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      console.warn(`Failed to fetch history for channel ${channelId}: ${data.error}`);
+      return [];
+    }
+    return data.messages || [];
+  }
+
+  async getThreadReplies(
+    token: string,
+    channelId: string,
+    threadTs: string,
+  ): Promise<any[]> {
+    const params = new URLSearchParams({
+      channel: channelId,
+      ts: threadTs,
+      limit: '100',
+    });
+    const res = await fetch(`https://slack.com/api/conversations.replies?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      console.warn(`Failed to fetch replies for thread ${threadTs} in channel ${channelId}: ${data.error}`);
+      return [];
+    }
+    return data.messages || [];
+  }
+
+  getPermalink(teamId?: string, channel?: string, ts?: string): string | undefined {
+    if (!teamId || !channel || !ts) return undefined;
+    return `https://app.slack.com/client/${teamId}/${channel}/p${ts.replace('.', '')}`;
+  }
+
+  async searchUserMessages(userToken: string, query: string): Promise<any[]> {
+    const params = new URLSearchParams({
+      query,
+      count: '100',
+    });
+    const res = await fetch(`https://slack.com/api/search.messages?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    const data = await res.json();
+    if (!data.ok) {
+      console.warn(`Failed to search messages for query "${query}": ${data.error}`);
+      return [];
+    }
+    return data.messages?.matches || [];
+  }
 }

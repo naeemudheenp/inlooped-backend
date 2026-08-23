@@ -18,11 +18,11 @@ import {
  * strong tier can be raised to Pro without touching a call site.
  */
 const TIER_MODELS: Record<LlmTier, string> = {
-  cheap: 'gemini-3-flash-preview',
-  strong: 'gemini-3-flash-preview',
+  cheap: 'gemini-3.6-flash',
+  strong: 'gemini-3.6-flash',
 };
 
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 120_000;
 
 @Injectable()
 export class GeminiAdapter implements LlmService {
@@ -79,7 +79,12 @@ export class GeminiAdapter implements LlmService {
       }
 
       const data = await response.json();
-      const text: string = (data.candidates?.[0]?.content?.parts?.[0]?.text ?? '').trim();
+      // The model may return multiple parts; take the last text part
+      // which contains the actual answer.
+      const parts: Array<{ text?: string }> =
+        data.candidates?.[0]?.content?.parts ?? [];
+      const answerPart = parts.filter((p) => p.text).pop();
+      const text: string = (answerPart?.text ?? '').trim();
 
       return {
         text,
@@ -127,6 +132,54 @@ function safeParse<T>(text: string): T | undefined {
   try {
     return JSON.parse(text) as T;
   } catch {
-    return undefined;
+    // Thinking models may truncate JSON output. Try to salvage what we can.
+    return lenientParse<T>(text);
   }
+}
+
+/**
+ * Attempt to extract top-level string/array values from truncated JSON.
+ * Specifically designed to rescue `journalMarkdown` when the full JSON is
+ * cut off mid-way through `workItems`.
+ */
+function lenientParse<T>(text: string): T | undefined {
+  if (!text || !text.startsWith('{')) return undefined;
+
+  const result: Record<string, unknown> = {};
+
+  // Extract journalMarkdown — a top-level string value
+  const mdMatch = text.match(/"journalMarkdown"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (mdMatch) {
+    result.journalMarkdown = mdMatch[1]
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
+  }
+
+  // Try to extract complete workItems array objects
+  const itemsMatch = text.match(/"workItems"\s*:\s*\[/);
+  if (itemsMatch) {
+    const startIdx = (itemsMatch.index ?? 0) + itemsMatch[0].length;
+    const items: unknown[] = [];
+    // Find each complete {...} object
+    let depth = 0;
+    let objStart = -1;
+    for (let i = startIdx; i < text.length; i++) {
+      if (text[i] === '{') {
+        if (depth === 0) objStart = i;
+        depth++;
+      } else if (text[i] === '}') {
+        depth--;
+        if (depth === 0 && objStart >= 0) {
+          try {
+            items.push(JSON.parse(text.slice(objStart, i + 1)));
+          } catch { /* skip incomplete objects */ }
+          objStart = -1;
+        }
+      }
+    }
+    result.workItems = items;
+  }
+
+  return Object.keys(result).length > 0 ? (result as T) : undefined;
 }

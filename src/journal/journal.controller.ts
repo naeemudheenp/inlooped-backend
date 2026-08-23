@@ -66,6 +66,12 @@ export class JournalController {
     await this.slackService.sendBotMessage(user.slackAccessToken, user.slackUserId, formattedText);
     return { ok: true, message: 'Journal entry sent to your Slack DM successfully!' };
   }
+
+  @Post(':day/sync-slack')
+  async syncSlack(@Req() req: AuthenticatedRequest, @Param('day') day: string) {
+    const result = await this.journal.syncSlackJournalForUser(userId(req), day);
+    return { ok: true, journal: result.journal, workItemsCreated: result.workItemsCreated };
+  }
 }
 
 function userId(req: AuthenticatedRequest): number {
