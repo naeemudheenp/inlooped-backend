@@ -43,7 +43,7 @@ export class GeminiAdapter implements LlmService {
     const started = Date.now();
 
     const generationConfig: Record<string, unknown> = {
-      maxOutputTokens: req.maxOutputTokens,
+      maxOutputTokens: Math.max(req.maxOutputTokens ?? 0, 4096),
       temperature: 0.1,
     };
     if (req.jsonSchema) {
@@ -79,12 +79,16 @@ export class GeminiAdapter implements LlmService {
       }
 
       const data = await response.json();
-      // The model may return multiple parts; take the last text part
-      // which contains the actual answer.
-      const parts: Array<{ text?: string }> =
+      // The model may return multiple parts (including thoughts); filter out thought parts
+      // to extract the actual text response.
+      const parts: Array<{ text?: string; thought?: boolean }> =
         data.candidates?.[0]?.content?.parts ?? [];
-      const answerPart = parts.filter((p) => p.text).pop();
-      const text: string = (answerPart?.text ?? '').trim();
+      const textParts = parts.filter((p) => p.text && !p.thought);
+      const text: string = (
+        textParts.length > 0
+          ? textParts.map((p) => p.text).join('\n\n')
+          : (parts.filter((p) => p.text).pop()?.text ?? '')
+      ).trim();
 
       return {
         text,

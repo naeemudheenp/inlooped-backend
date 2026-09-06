@@ -74,7 +74,7 @@ export class AgentService {
       const res = await this.llm.complete({
         system: ANSWER_SYSTEM,
         user: buildAnswerUser(question, rows.map(toPromptItem)),
-        maxOutputTokens: 1000,
+        maxOutputTokens: 4096,
         tier: 'strong',
         label: 'answer',
       });
