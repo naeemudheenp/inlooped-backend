@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { SlackService } from '../integrations/slack/slack.service';
 import { LLM_SERVICE, LlmService } from '../llm/llm.types';
@@ -551,12 +551,12 @@ export class JournalService {
   }
 
   /**
-   * Cron job running hourly at the top of the hour to generate daily journals
-   * for users whose local time has hit 6:00 PM.
+   * Cron job running automatically every 3 hours to generate/update daily journals
+   * for active users based on their recent Slack activity.
    */
-  @Cron('0 * * * *')
+  @Cron(CronExpression.EVERY_3_HOURS)
   async runScheduledDailyJournalSync(): Promise<void> {
-    this.logger.log('Running scheduled hourly check for Daily Slack Journal Sync...');
+    this.logger.log('Running 3-hour scheduled check for Daily Slack Journal Sync...');
     const users = await this.prisma.users.findMany({
       where: { slackEnabled: true, slackAccessToken: { not: null } },
     });
@@ -570,23 +570,18 @@ export class JournalService {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
-          hour: 'numeric',
-          hour12: false,
         });
         const parts = formatter.formatToParts(now);
         const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
         const year = getPart('year');
         const month = getPart('month');
         const day = getPart('day');
-        const hour = parseInt(getPart('hour'), 10);
 
-        if (hour === 18) {
-          const dayKey = `${year}-${month}-${day}`;
-          this.logger.log(`Running scheduled sync for user ${user.id} (${user.email}) for day ${dayKey}`);
-          await this.syncSlackJournalForUser(user.id, dayKey);
-        }
+        const dayKey = `${year}-${month}-${day}`;
+        this.logger.log(`Running 3-hour scheduled sync for user ${user.id} (${user.email}) for day ${dayKey}`);
+        await this.syncSlackJournalForUser(user.id, dayKey);
       } catch (err) {
-        this.logger.error(`Scheduled sync failed for user ${user.id}`, err as Error);
+        this.logger.error(`Scheduled 3-hour sync failed for user ${user.id}`, err as Error);
       }
     }
   }
