@@ -245,6 +245,12 @@ export class AgentService {
     });
     if (!hit) return null;
 
+    // Ignore broken or truncated cached answers (e.g., ends with '(' or lacks ending punctuation)
+    const trimmed = hit.answer.trim();
+    if (trimmed.endsWith('(') || trimmed.endsWith('[') || (!/[.!?"]$/.test(trimmed) && trimmed.length < 300)) {
+      return null;
+    }
+
     const ids = Array.isArray(hit.itemIds) ? (hit.itemIds as string[]) : [];
     const items = ids.length > 0 ? await this.hydrate(ids) : [];
     return { answer: hit.answer, items: items.map((i) => this.surface.present(i)), route: 'cache' };
