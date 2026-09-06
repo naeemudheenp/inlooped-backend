@@ -43,7 +43,7 @@ export class AgentService {
     // 1 — Answer cache. The suggestion pills are fixed strings, so they land
     // here almost every time after the first.
     const cached = await this.readCache(userId, question);
-    if (cached) return cached;
+    if (cached && !cached.answer.trim().endsWith('(')) return cached;
 
     // 2 — Deterministic router. Two of the three suggested questions are
     // structural, not semantic: they are a WHERE clause, not a reading task.
@@ -74,7 +74,7 @@ export class AgentService {
       const res = await this.llm.complete({
         system: ANSWER_SYSTEM,
         user: buildAnswerUser(question, rows.map(toPromptItem)),
-        maxOutputTokens: 400,
+        maxOutputTokens: 1000,
         tier: 'strong',
         label: 'answer',
       });
