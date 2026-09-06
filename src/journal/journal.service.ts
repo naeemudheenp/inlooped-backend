@@ -551,12 +551,13 @@ export class JournalService {
   }
 
   /**
-   * Cron job running automatically every 3 hours to generate/update daily journals
-   * for active users based on their recent Slack activity.
+   * Cron job running automatically to generate/update daily journals
+   * for active users based on their recent Slack activity, strictly within
+   * their local working hours (9:00 AM - 7:30 PM).
    */
   @Cron(CronExpression.EVERY_3_HOURS)
   async runScheduledDailyJournalSync(): Promise<void> {
-    this.logger.log('Running 3-hour scheduled check for Daily Slack Journal Sync...');
+    this.logger.log('Running scheduled check for Daily Slack Journal Sync...');
     const users = await this.prisma.users.findMany({
       where: { slackEnabled: true, slackAccessToken: { not: null } },
     });
@@ -570,18 +571,35 @@ export class JournalService {
           year: 'numeric',
           month: '2-digit',
           day: '2-digit',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: false,
         });
         const parts = formatter.formatToParts(now);
         const getPart = (type: string) => parts.find((p) => p.type === type)?.value || '';
         const year = getPart('year');
         const month = getPart('month');
         const day = getPart('day');
+        const hour = parseInt(getPart('hour'), 10);
+        const minute = parseInt(getPart('minute'), 10);
+
+        // Strictly enforce 9:00 AM - 7:30 PM (19:30) window in user's timezone
+        const timeInMinutes = hour * 60 + minute;
+        const startMinutes = 9 * 60; // 9:00 AM
+        const endMinutes = 19 * 60 + 30; // 7:30 PM
+
+        if (timeInMinutes < startMinutes || timeInMinutes > endMinutes) {
+          this.logger.log(
+            `Skipping sync for user ${user.id} (${user.email}): local time is ${hour}:${minute.toString().padStart(2, '0')}, outside 9:00 AM - 7:30 PM window.`,
+          );
+          continue;
+        }
 
         const dayKey = `${year}-${month}-${day}`;
-        this.logger.log(`Running 3-hour scheduled sync for user ${user.id} (${user.email}) for day ${dayKey}`);
+        this.logger.log(`Running scheduled sync for user ${user.id} (${user.email}) for day ${dayKey}`);
         await this.syncSlackJournalForUser(user.id, dayKey);
       } catch (err) {
-        this.logger.error(`Scheduled 3-hour sync failed for user ${user.id}`, err as Error);
+        this.logger.error(`Scheduled sync failed for user ${user.id}`, err as Error);
       }
     }
   }
