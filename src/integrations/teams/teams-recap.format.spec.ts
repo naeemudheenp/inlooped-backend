@@ -29,8 +29,10 @@ describe('Teams notification formatting', () => {
     expect(message).toContain('Nothing pinned.');
   });
 
-  it('sends the recap at 5 PM Friday in the configured timezone', () => {
-    expect(isTeamsRecapDue(new Date('2026-11-06T17:00:00Z'), 'UTC')).toBe(true);
-    expect(isTeamsRecapDue(new Date('2026-11-06T16:00:00Z'), 'UTC')).toBe(false);
+  it('sends the recap at 8 AM Tuesday in the configured timezone', () => {
+    expect(isTeamsRecapDue(new Date('2026-11-10T08:00:00Z'), 'UTC')).toBe(true);
+    expect(isTeamsRecapDue(new Date('2026-11-10T09:00:00Z'), 'UTC')).toBe(
+      false,
+    );
   });
 });

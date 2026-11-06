@@ -33,8 +33,8 @@ describe('Slack digest formatting', () => {
     expect(recap).toContain('turn this recap off in Slack settings');
   });
 
-  it('schedules recaps on Friday at 5pm in the user timezone', () => {
-    expect(isRecapDue(new Date('2026-11-07T01:00:00Z'), 'America/Los_Angeles')).toBe(true);
-    expect(isRecapDue(new Date('2026-11-07T00:00:00Z'), 'America/Los_Angeles')).toBe(false);
+  it('schedules recaps on Tuesday at 8am in the user timezone', () => {
+    expect(isRecapDue(new Date('2026-11-10T16:00:00Z'), 'America/Los_Angeles')).toBe(true);
+    expect(isRecapDue(new Date('2026-11-10T15:00:00Z'), 'America/Los_Angeles')).toBe(false);
   });
 });

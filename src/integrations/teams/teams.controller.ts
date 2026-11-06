@@ -11,7 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { AuthenticatedRequest, JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import {
+  AuthenticatedRequest,
+  JwtAuthGuard,
+} from '../../common/guards/jwt-auth.guard';
 import { TeamsService } from './teams.service';
 
 @Controller('integrations/teams')
@@ -42,13 +45,17 @@ export class TeamsController {
     }
 
     try {
-      if (!code || !state) throw new BadRequestException('Missing Microsoft OAuth code or state');
+      if (!code || !state)
+        throw new BadRequestException('Missing Microsoft OAuth code or state');
       const userId = this.teams.verifyState(state);
       await this.teams.handleOAuthCallback(code, userId);
       return res.redirect(`${frontendUrl}/settings?teams=connected`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Teams connection failed';
-      return res.redirect(`${frontendUrl}/settings?teams=error&msg=${encodeURIComponent(message)}`);
+      const message =
+        err instanceof Error ? err.message : 'Teams connection failed';
+      return res.redirect(
+        `${frontendUrl}/settings?teams=error&msg=${encodeURIComponent(message)}`,
+      );
     }
   }
 
@@ -76,7 +83,10 @@ export class TeamsController {
 
   @Get('channels')
   @UseGuards(JwtAuthGuard)
-  listChannels(@Req() req: AuthenticatedRequest, @Query('teamId') teamId: string) {
+  listChannels(
+    @Req() req: AuthenticatedRequest,
+    @Query('teamId') teamId: string,
+  ) {
     if (!teamId) throw new BadRequestException('teamId is required');
     return this.teams.listChannels(this.userId(req), teamId);
   }
@@ -87,7 +97,11 @@ export class TeamsController {
     @Req() req: AuthenticatedRequest,
     @Body() body: { teamId?: string; channelId?: string },
   ) {
-    await this.teams.selectChannel(this.userId(req), body?.teamId ?? '', body?.channelId ?? '');
+    await this.teams.selectChannel(
+      this.userId(req),
+      body?.teamId ?? '',
+      body?.channelId ?? '',
+    );
     return { ok: true };
   }
 

@@ -10,11 +10,16 @@ export interface TeamsWeeklyRecap {
   pinned: TeamsDigestItem[];
 }
 
-const RECAP_WEEKDAY = 'Fri';
-const RECAP_HOUR = 17;
+const RECAP_WEEKDAY = 'Tue';
+const RECAP_HOUR = 8;
 
 function escapeHtml(text: string): string {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function itemLabel(item: TeamsDigestItem, frontendUrl?: string): string {
@@ -33,10 +38,12 @@ function section(
   withPerson = false,
 ): string {
   const lines = items.slice(0, 10).map((item) => {
-    const who = withPerson && item.personName ? `${escapeHtml(item.personName)} — ` : '';
+    const who =
+      withPerson && item.personName ? `${escapeHtml(item.personName)} — ` : '';
     return `<li>${who}${itemLabel(item, frontendUrl)}</li>`;
   });
-  if (items.length > lines.length) lines.push(`<li>…and ${items.length - lines.length} more</li>`);
+  if (items.length > lines.length)
+    lines.push(`<li>…and ${items.length - lines.length} more</li>`);
   return `<p><b>${heading} (${items.length})</b></p>${lines.length ? `<ul>${lines.join('')}</ul>` : `<p><i>${empty}</i></p>`}`;
 }
 
@@ -46,7 +53,12 @@ export function formatTeamsWeeklyRecap(
 ): string {
   return [
     '<h2>Your week in Inlooped</h2>',
-    section('Resolved this week', recap.resolved, 'Nothing resolved this week.', frontendUrl),
+    section(
+      'Resolved this week',
+      recap.resolved,
+      'Nothing resolved this week.',
+      frontendUrl,
+    ),
     section(
       'Still waiting on',
       recap.waiting,
@@ -55,7 +67,9 @@ export function formatTeamsWeeklyRecap(
       true,
     ),
     section('Pinned', recap.pinned, 'Nothing pinned.', frontendUrl),
-    frontendUrl ? `<p><a href="${escapeHtml(frontendUrl)}">Open Inlooped</a></p>` : '',
+    frontendUrl
+      ? `<p><a href="${escapeHtml(frontendUrl)}">Open Inlooped</a></p>`
+      : '',
   ]
     .filter(Boolean)
     .join('');
