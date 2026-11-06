@@ -39,6 +39,9 @@ features:
       description: Ask Inlooped to remember something
       usage_hint: "check the pricing proposal when I'm back"
       should_escape: false
+    - command: /today
+      description: Show your top items for today
+      should_escape: false
 
 oauth_config:
   redirect_urls:

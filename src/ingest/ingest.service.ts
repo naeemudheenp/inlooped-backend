@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { LLM_SERVICE, LlmService, LlmUnavailableError } from '../llm/llm.types';
 import { CLASSIFY_SCHEMA, CLASSIFY_SYSTEM, ClassifyResult } from './classify.prompt';
 import { computeSurfaceScore } from '../surface/surface.scoring';
+import { TeamsService } from '../integrations/teams/teams.service';
 
 export interface CaptureInput {
   userId: number;
@@ -48,6 +49,7 @@ export class IngestService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(LLM_SERVICE) private readonly llm: LlmService,
+    private readonly teams: TeamsService,
   ) {}
 
   /**
@@ -256,7 +258,7 @@ export class IngestService {
       personName: fields.personName,
     };
 
-    return this.prisma.workItem.create({
+    const item = await this.prisma.workItem.create({
       data: {
         userId: input.userId,
         kind: fields.kind,
@@ -275,6 +277,8 @@ export class IngestService {
         surfaceScore: computeSurfaceScore(scorable),
       },
     });
+    await this.teams.notifyCapture(input.userId, item);
+    return item;
   }
 }
 

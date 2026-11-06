@@ -24,6 +24,21 @@ model users {
   slackTeamId      String?
   slackEnabled     Boolean @default(false)
   slackTimezone    String? @default("UTC")
+  weeklyRecapEnabled Boolean @default(true)
+  lastWeeklyRecapAt  DateTime?
+
+  teamsAccessToken              String?
+  teamsRefreshToken             String?
+  teamsAccessTokenExpiresAt      DateTime?
+  teamsUserId                   String?
+  teamsUserEmail                String?
+  teamsEnabled                  Boolean   @default(false)
+  teamsTeamId                   String?
+  teamsChannelId                String?
+  teamsNewCaptureNotifications  Boolean   @default(true)
+  teamsWeeklyRecapEnabled       Boolean   @default(true)
+  teamsTimezone                 String    @default("UTC")
+  lastTeamsWeeklyRecapAt        DateTime?
 
   googleAccessToken  String?
   googleRefreshToken String?
@@ -84,6 +99,8 @@ model WorkItem {
   isPinned       Boolean   @default(false)
   surfaceScore   Float     @default(0)
   lastSurfacedAt DateTime?
+  snoozedUntil   DateTime?
+  resolvedAt     DateTime?
 
   occurredAt DateTime @default(now())
   createdAt  DateTime @default(now())
@@ -96,6 +113,7 @@ model WorkItem {
 
   @@unique([userId, sourceHash])
   @@index([userId, status, surfaceScore])
+  @@index([userId, snoozedUntil])
   @@index([userId, isPinned])
   @@index([userId, personName])
   @@index([userId, topic])

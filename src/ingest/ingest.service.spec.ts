@@ -2,6 +2,7 @@ import { Test } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { LLM_SERVICE, LlmService } from '../llm/llm.types';
 import { IngestService } from './ingest.service';
+import { TeamsService } from '../integrations/teams/teams.service';
 
 /**
  * These are the cost model's load-bearing assertions.
@@ -88,16 +89,19 @@ describe('IngestService — cost gates', () => {
   let ingest: IngestService;
   let prisma: FakePrisma;
   let llm: SpyLlm;
+  let notifyCapture: jest.Mock;
 
   beforeEach(async () => {
     prisma = new FakePrisma();
     llm = new SpyLlm();
+    notifyCapture = jest.fn().mockResolvedValue(undefined);
 
     const moduleRef = await Test.createTestingModule({
       providers: [
         IngestService,
         { provide: PrismaService, useValue: prisma },
         { provide: LLM_SERVICE, useValue: llm },
+        { provide: TeamsService, useValue: { notifyCapture } },
       ],
     }).compile();
 
@@ -114,6 +118,7 @@ describe('IngestService — cost gates', () => {
     expect(usedLlm).toBe(true);
     expect(llm.calls).toBe(1);
     expect(prisma.rows).toHaveLength(1);
+    expect(notifyCapture).toHaveBeenCalledWith(1, expect.objectContaining({ title: 'Checkout timeouts' }));
   });
 
   it('merges an exact duplicate without a second call', async () => {

@@ -13,7 +13,7 @@ import {
   RawBodyRequest,
 } from '@nestjs/common';
 import { SlackService } from './slack.service';
-import { SlackEventsService } from './slack-events.service';
+import { SlackEventsService, slashCommandName } from './slack-events.service';
 import { Request, Response } from 'express';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtAuthGuard, AuthenticatedRequest } from 'src/common/guards/jwt-auth.guard';
@@ -123,7 +123,7 @@ export class SlackController {
     return {};
   }
 
-  // ---- Inbound: slash commands (/remember) ----
+  // ---- Inbound: slash commands (/remember, /today) ----
   // Slack posts these as form-encoded, and requires a reply inside 3s. We ack
   // immediately and capture asynchronously, same pattern as /events above.
   @Post('commands')
@@ -137,9 +137,16 @@ export class SlackController {
       throw new UnauthorizedException('Invalid Slack signature');
     }
 
-    if ((body?.command ?? '').replace('/', '') !== 'remember') {
+    const command = slashCommandName(body?.command);
+    if (!command) {
       return { response_type: 'ephemeral', text: 'Unknown command.' };
     }
+
+    if (command === 'today') {
+      const text = await this.slackEvents.handleTodayCommand(body);
+      return { response_type: 'ephemeral', text };
+    }
+
     if (!body?.text?.trim()) {
       return { response_type: 'ephemeral', text: 'Usage: `/remember check the pricing proposal`' };
     }
@@ -154,7 +161,11 @@ export class SlackController {
   async getSettings(@Req() req: AuthenticatedRequest) {
     const user = await this.prisma.users.findUnique({
       where: { id: req.user.userId },
-      select: { slackEnabled: true, slackTimezone: true },
+      select: {
+        slackEnabled: true,
+        slackTimezone: true,
+        weeklyRecapEnabled: true,
+      },
     });
     return user ?? { error: 'User not found' };
   }
@@ -162,9 +173,12 @@ export class SlackController {
   @Patch('settings')
   @UseGuards(JwtAuthGuard)
   async updateSettings(@Req() req: AuthenticatedRequest, @Body() body: any) {
-    const data: { slackTimezone?: string } = {};
+    const data: { slackTimezone?: string; weeklyRecapEnabled?: boolean } = {};
     if (typeof body?.slackTimezone === 'string' && body.slackTimezone.length) {
       data.slackTimezone = body.slackTimezone;
+    }
+    if (typeof body?.weeklyRecapEnabled === 'boolean') {
+      data.weeklyRecapEnabled = body.weeklyRecapEnabled;
     }
     await this.prisma.users.update({ where: { id: req.user.userId }, data });
     return { ok: true, ...data };

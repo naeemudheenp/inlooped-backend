@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { WorkItem } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -23,6 +23,7 @@ export interface SurfacedItem {
   messageCount: number;
   isPinned: boolean;
   occurredAt: string;
+  snoozedUntil: string | null;
 }
 
 export interface GroupedSurfaceFeed {
@@ -32,6 +33,10 @@ export interface GroupedSurfaceFeed {
 }
 
 const DEFAULT_LIMIT = 6;
+
+export function notSnoozed(now: Date = new Date()) {
+  return { OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }] };
+}
 
 @Injectable()
 export class SurfaceService {
@@ -44,24 +49,33 @@ export class SurfaceService {
    * Includes both OPEN and RESOLVED items so resolved items remain visible.
    */
   async getFeed(userId: number, targetDate?: string): Promise<GroupedSurfaceFeed> {
-    const whereClause: any = { userId, status: { in: ['OPEN', 'RESOLVED'] } };
-    
+    const now = new Date();
+    const whereClause: any = {
+      userId,
+      status: { in: ['OPEN', 'RESOLVED'] },
+      AND: [notSnoozed(now)],
+    };
+
     let startOfTargetDate: Date;
     let endOfTargetDate: Date | null = null;
-    
+
     if (targetDate) {
       startOfTargetDate = new Date(targetDate);
       endOfTargetDate = new Date(startOfTargetDate);
       endOfTargetDate.setDate(endOfTargetDate.getDate() + 1);
-      
-      whereClause.occurredAt = {
-        gte: startOfTargetDate,
-        lt: endOfTargetDate,
-      };
+
+      whereClause.AND.push({
+        OR: [
+          { occurredAt: { gte: startOfTargetDate, lt: endOfTargetDate } },
+          { snoozedUntil: { gte: startOfTargetDate, lt: endOfTargetDate } },
+        ],
+      });
     } else {
-      const now = new Date();
       startOfTargetDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     }
+
+    const inTargetDay = (d: Date | null) =>
+      !!d && d >= startOfTargetDate && (!endOfTargetDate || d < endOfTargetDate);
 
     const allItems = await this.prisma.workItem.findMany({
       where: whereClause,
@@ -77,7 +91,7 @@ export class SurfaceService {
       const surfaced = this.present(item);
       if (item.isPinned) {
         pinned.push(surfaced);
-      } else if (item.occurredAt >= startOfTargetDate && (!endOfTargetDate || item.occurredAt < endOfTargetDate)) {
+      } else if (inTargetDay(item.occurredAt) || inTargetDay(item.snoozedUntil)) {
         today.push(surfaced);
       } else {
         recent.push(surfaced);
@@ -88,16 +102,22 @@ export class SurfaceService {
   }
 
   async today(userId: number, limit = DEFAULT_LIMIT, targetDate?: string): Promise<SurfacedItem[]> {
-    const whereClause: any = { userId, status: { in: ['OPEN', 'RESOLVED'] } };
-    
+    const whereClause: any = {
+      userId,
+      status: { in: ['OPEN', 'RESOLVED'] },
+      AND: [notSnoozed()],
+    };
+
     if (targetDate) {
       const start = new Date(targetDate);
       const end = new Date(start);
       end.setDate(end.getDate() + 1);
-      whereClause.occurredAt = {
-        gte: start,
-        lt: end,
-      };
+      whereClause.AND.push({
+        OR: [
+          { occurredAt: { gte: start, lt: end } },
+          { snoozedUntil: { gte: start, lt: end } },
+        ],
+      });
     }
 
     const items = await this.prisma.workItem.findMany({
@@ -106,6 +126,15 @@ export class SurfaceService {
       take: limit,
     });
 
+    return items.map((i) => this.present(i));
+  }
+
+  async topOpen(userId: number, limit = 5): Promise<SurfacedItem[]> {
+    const items = await this.prisma.workItem.findMany({
+      where: { userId, status: 'OPEN', AND: [notSnoozed()] },
+      orderBy: [{ isPinned: 'desc' }, { surfaceScore: 'desc' }],
+      take: limit,
+    });
     return items.map((i) => this.present(i));
   }
 
@@ -138,6 +167,7 @@ export class SurfaceService {
       messageCount: item.messageCount,
       isPinned: Boolean(item.isPinned),
       occurredAt: item.occurredAt.toISOString(),
+      snoozedUntil: item.snoozedUntil ? item.snoozedUntil.toISOString() : null,
     };
   }
 
@@ -177,6 +207,7 @@ export class SurfaceService {
       where: { id: itemId },
       data: {
         status: nextStatus,
+        resolvedAt: nextStatus === 'RESOLVED' ? new Date() : null,
         surfaceScore: nextStatus === 'RESOLVED' ? 0 : computeSurfaceScore(item),
       },
     });
@@ -188,6 +219,22 @@ export class SurfaceService {
       where: { id: itemId, userId },
       data: { status: 'DISMISSED', surfaceScore: 0 },
     });
+  }
+
+  async snooze(userId: number, itemId: string, until: Date, now: Date = new Date()): Promise<Date> {
+    if (Number.isNaN(until.getTime())) {
+      throw new BadRequestException('until must be a valid date');
+    }
+    if (until.getTime() <= now.getTime()) {
+      throw new BadRequestException('until must be in the future');
+    }
+
+    const { count } = await this.prisma.workItem.updateMany({
+      where: { id: itemId, userId, status: { not: 'DISMISSED' } },
+      data: { snoozedUntil: until },
+    });
+    if (count === 0) throw new NotFoundException('Item not found');
+    return until;
   }
 
   /** Exposed for the "may have gone away" copy in tests. */

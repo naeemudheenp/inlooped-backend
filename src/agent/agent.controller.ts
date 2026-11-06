@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { AuthenticatedRequest, JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { LLM_SERVICE, LlmService } from '../llm/llm.types';
 import { MeteredLlmService } from '../llm/metered-llm.service';
@@ -34,6 +34,11 @@ export class TodayQueryDto {
   @IsOptional()
   @IsString()
   date?: string;
+}
+
+export class SnoozeDto {
+  @IsDateString()
+  until!: string;
 }
 
 @Controller('agent')
@@ -72,6 +77,7 @@ export class AgentController {
       messageCount: 1,
       isPinned: false,
       occurredAt: evt.startTime,
+      snoozedUntil: null,
     }));
 
     // Merge calendar events into today feed items
@@ -126,6 +132,16 @@ export class AgentController {
   async dismiss(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     await this.surface.dismiss(userId(req), id);
     return { ok: true };
+  }
+
+  @Post('items/:id/snooze')
+  async snooze(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: SnoozeDto,
+  ) {
+    const snoozedUntil = await this.surface.snooze(userId(req), id, new Date(body.until));
+    return { ok: true, snoozedUntil };
   }
 
   /**
