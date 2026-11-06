@@ -6,6 +6,7 @@ import {
   isStale,
   metaLabel,
 } from './surface.scoring';
+import { SURFACE_KIND_WEIGHT, SURFACE_SCORING } from './surface.config';
 
 const DAY = 86_400_000;
 const NOW = new Date('2026-08-09T12:00:00Z');
@@ -25,6 +26,19 @@ function item(over: Partial<ScorableItem> = {}): ScorableItem {
 }
 
 describe('surface scoring — age vs importance', () => {
+  it('uses the centralized kind weights for Today ranking', () => {
+    expect(SURFACE_KIND_WEIGHT).toEqual({
+      WAITING: 1.0,
+      REMEMBER: 0.9,
+      TASK: 0.7,
+      REFERENCE: 0.2,
+    });
+    expect(computeSurfaceScore(item({ kind: 'WAITING' }), NOW)).toBeGreaterThan(
+      computeSurfaceScore(item({ kind: 'TASK' }), NOW),
+    );
+    expect(SURFACE_SCORING.minScore).toBe(MIN_SURFACE_SCORE);
+  });
+
   it('ranks a fresh item above an equally important old one', () => {
     const fresh = computeSurfaceScore(item({ occurredAt: daysAgo(1) }), NOW);
     const old = computeSurfaceScore(item({ occurredAt: daysAgo(30) }), NOW);

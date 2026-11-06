@@ -1,6 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SlackService } from './slack.service';
 import { IngestService, CaptureRoute } from '../../ingest/ingest.service';
+import { SurfaceService } from '../../surface/surface.service';
+import { formatTodayReply } from './slack-digest.format';
+
+export const SLASH_COMMANDS = ['remember', 'today'] as const;
+export type SlashCommand = (typeof SLASH_COMMANDS)[number];
+
+export function slashCommandName(raw: unknown): SlashCommand | null {
+  const name = String(raw ?? '').replace(/^\//, '').trim().toLowerCase();
+  return (SLASH_COMMANDS as readonly string[]).includes(name) ? (name as SlashCommand) : null;
+}
+
+const TODAY_COMMAND_LIMIT = 5;
 
 /** Reactions that mean "send this to Inlooped". */
 const CAPTURE_REACTIONS = new Set([
@@ -31,6 +43,7 @@ export class SlackEventsService {
   constructor(
     private readonly slack: SlackService,
     private readonly ingest: IngestService,
+    private readonly surface: SurfaceService,
   ) {}
 
   /** Handles a verified Events API `event_callback` payload. */
@@ -147,6 +160,28 @@ export class SlackEventsService {
     });
 
     await this.confirm(user, this.confirmation(route));
+  }
+
+  async handleTodayCommand(payload: {
+    user_id?: string;
+    team_id?: string;
+  }): Promise<string> {
+    if (!payload.user_id || !payload.team_id) {
+      return "I couldn't tell who you are — try again.";
+    }
+
+    const user = await this.slack.findUserBySlack(payload.user_id, payload.team_id);
+    if (!user) {
+      return 'Connect Slack in Inlooped settings first, then try `/today` again.';
+    }
+
+    try {
+      const items = await this.surface.topOpen(user.id, TODAY_COMMAND_LIMIT);
+      return formatTodayReply(items, process.env.FRONTEND_URL);
+    } catch (err) {
+      this.logger.error(`/today failed for user ${user.id}`, err as Error);
+      return "Sorry, I couldn't load today's items. Try again in a moment.";
+    }
   }
 
   // -- internals -----------------------------------------------------------

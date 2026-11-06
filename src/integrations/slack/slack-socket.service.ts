@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { SocketModeClient } from '@slack/socket-mode';
-import { SlackEventsService } from './slack-events.service';
+import { SlackEventsService, slashCommandName } from './slack-events.service';
 
 /**
  * Connects to Slack over Socket Mode (a persistent WebSocket) so inbound events
@@ -55,11 +55,17 @@ export class SlackSocketService implements OnModuleInit {
 			}
 		});
 
-		// Slash commands: /remember. Socket Mode delivers these too, so the
-		// command works from localhost with no public URL.
+		// Slash commands: /remember, /today. Socket Mode delivers these too, so
+		// the commands work from localhost with no public URL.
 		this.client.on('slash_commands', async ({ ack, body }: any) => {
+			const command = slashCommandName(body?.command);
+			if (command === 'today') {
+				const text = await this.events.handleTodayCommand(body);
+				await this.safeAck(ack, { response_type: 'ephemeral', text });
+				return;
+			}
 			await this.safeAck(ack);
-			if ((body?.command ?? '').replace('/', '') === 'remember') {
+			if (command === 'remember') {
 				await this.events.handleRememberCommand(body);
 			}
 		});
@@ -76,9 +82,9 @@ export class SlackSocketService implements OnModuleInit {
 		}
 	}
 
-	private async safeAck(ack?: () => Promise<void>) {
+	private async safeAck(ack?: (response?: any) => Promise<void>, response?: any) {
 		try {
-			await ack?.();
+			await (response === undefined ? ack?.() : ack?.(response));
 		} catch {
 			// ignore — a failed ack only triggers a harmless Slack retry
 		}

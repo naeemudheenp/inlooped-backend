@@ -8,6 +8,8 @@
  * zero tokens no matter how often it is loaded.
  */
 
+import { SURFACE_KIND_WEIGHT, SURFACE_SCORING } from './surface.config';
+
 export type ItemKind = 'TASK' | 'REFERENCE' | 'WAITING' | 'REMEMBER';
 export type ItemStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED';
 
@@ -21,41 +23,11 @@ export interface ScorableItem {
   personName?: string | null;
 }
 
-const DAY_MS = 86_400_000;
+const DAY_MS = SURFACE_SCORING.recentlyShownWithinMs;
 
-/** How intrinsically loud a kind is before time is taken into account. */
-const KIND_WEIGHT: Record<ItemKind, number> = {
-  WAITING: 1.0, // someone else is blocking you — the most useful thing to see
-  REMEMBER: 0.9, // you explicitly asked to be reminded
-  TASK: 0.7,
-  REFERENCE: 0.2, // context, not a call to action
-};
-
-/**
- * Importance does not scale the decay — it extends the *half-life*. That
- * distinction matters: a fixed 5-day constant drives exp(-60/5) to ~6e-6, at
- * which point multiplying by importance cannot separate a release blocker from
- * a throwaway link (both round to zero). Scaling the half-life instead encodes
- * the real claim — important things stay relevant for longer.
- *
- *   importance 0.15 -> ~9 day half-life   (a stale link disappears)
- *   importance 0.90 -> ~28 day half-life  (a stale blocker persists)
- */
-const SURFACE_HALF_LIFE_MIN_DAYS = 5;
-const SURFACE_HALF_LIFE_RANGE_DAYS = 25;
-
-/** Gentler across the board: a direct question should still find old things. */
-const CONTEXT_HALF_LIFE_MIN_DAYS = 14;
-const CONTEXT_HALF_LIFE_RANGE_DAYS = 30;
-
-/** Below this a row is not worth anyone's attention; it drops off the home list. */
-export const MIN_SURFACE_SCORE = 0.02;
-
-/** An OPEN item nobody has touched in this long reads as "may have gone away". */
-export const DORMANT_AFTER_DAYS = 14;
-
-/** Past this, an item is labelled "may be stale" before it reaches the model. */
-export const STALE_AFTER_DAYS = 30;
+export const MIN_SURFACE_SCORE = SURFACE_SCORING.minScore;
+export const DORMANT_AFTER_DAYS = SURFACE_SCORING.dormantAfterDays;
+export const STALE_AFTER_DAYS = SURFACE_SCORING.staleAfterDays;
 
 export function ageInDays(occurredAt: Date, now: Date = new Date()): number {
   return Math.max(0, (now.getTime() - occurredAt.getTime()) / DAY_MS);
@@ -63,13 +35,15 @@ export function ageInDays(occurredAt: Date, now: Date = new Date()): number {
 
 export function surfaceRecencyDecay(occurredAt: Date, importance: number, now?: Date): number {
   const halfLife =
-    SURFACE_HALF_LIFE_MIN_DAYS + SURFACE_HALF_LIFE_RANGE_DAYS * clamp01(importance);
+    SURFACE_SCORING.halfLifeMinDays +
+    SURFACE_SCORING.halfLifeRangeDays * clamp01(importance);
   return Math.exp(-ageInDays(occurredAt, now) / halfLife);
 }
 
 export function contextRecencyDecay(occurredAt: Date, importance: number, now?: Date): number {
   const halfLife =
-    CONTEXT_HALF_LIFE_MIN_DAYS + CONTEXT_HALF_LIFE_RANGE_DAYS * clamp01(importance);
+    SURFACE_SCORING.contextHalfLifeMinDays +
+    SURFACE_SCORING.contextHalfLifeRangeDays * clamp01(importance);
   return Math.exp(-ageInDays(occurredAt, now) / halfLife);
 }
 
@@ -93,18 +67,23 @@ export function computeSurfaceScore(item: ScorableItem, now: Date = new Date()):
   const importance = clamp01(item.importance);
 
   const base =
-    KIND_WEIGHT[item.kind] *
+    SURFACE_KIND_WEIGHT[item.kind] *
     (0.4 + 0.6 * importance) *
     surfaceRecencyDecay(item.occurredAt, importance, now) *
     dormancyFactor(item, now);
 
   // Only *additional* messages count as heat — otherwise every single-message
   // item gets the same flat bonus, which is just noise added to every row.
-  const heat = (Math.min(item.messageCount, 5) - 1) * 0.18;
+  const heat =
+    (Math.min(item.messageCount, SURFACE_SCORING.maxHeatMessages) - 1) *
+    SURFACE_SCORING.messageHeatPerAdditional;
 
   // Rotation, so the same four rows don't sit there every day.
   const recentlyShown =
-    item.lastSurfacedAt && now.getTime() - item.lastSurfacedAt.getTime() < DAY_MS ? 0.4 : 0;
+    item.lastSurfacedAt &&
+    now.getTime() - item.lastSurfacedAt.getTime() < SURFACE_SCORING.recentlyShownWithinMs
+      ? SURFACE_SCORING.recentlyShownPenalty
+      : 0;
 
   return round4(Math.max(0, base + heat - recentlyShown));
 }
@@ -118,8 +97,15 @@ export function computeSurfaceScore(item: ScorableItem, now: Date = new Date()):
  */
 function dormancyFactor(item: ScorableItem, now?: Date): number {
   if (!isDormant(item, now)) return 1;
-  const ramp = Math.min((ageInDays(item.occurredAt, now) - DORMANT_AFTER_DAYS) / 30, 1);
-  return 1 - 0.35 * (1 - clamp01(item.importance)) * ramp;
+  const ramp = Math.min(
+    (ageInDays(item.occurredAt, now) - DORMANT_AFTER_DAYS) /
+      SURFACE_SCORING.dormancyRampDays,
+    1,
+  );
+  return (
+    1 -
+    SURFACE_SCORING.dormancyMaxPenalty * (1 - clamp01(item.importance)) * ramp
+  );
 }
 
 /**
