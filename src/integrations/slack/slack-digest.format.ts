@@ -1,7 +1,7 @@
 /**
  * Pure formatting and timing for the two Slack digests:
  *   INL-102 — the /today slash command
- *   INL-103 — the Friday weekly recap DM
+ *   INL-103 — the Tuesday weekly recap DM
  *
  * Kept free of Nest and Prisma so it can be unit-tested directly.
  */
@@ -83,8 +83,8 @@ export function formatWeeklyRecap(recap: WeeklyRecap, frontendUrl?: string): str
   ].join('\n\n');
 }
 
-export const RECAP_WEEKDAY = 'Fri';
-export const RECAP_HOUR = 17;
+export const RECAP_WEEKDAY = 'Tue';
+export const RECAP_HOUR = 8;
 
 export function localWeekdayAndHour(
   now: Date,

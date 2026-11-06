@@ -28,7 +28,11 @@ const GRAPH_SCOPES = [
 ].join(' ');
 
 type GraphTeam = { id: string; displayName: string; description?: string };
-type GraphChannel = { id: string; displayName: string; membershipType?: string };
+type GraphChannel = {
+  id: string;
+  displayName: string;
+  membershipType?: string;
+};
 type MicrosoftTokens = {
   access_token: string;
   refresh_token?: string;
@@ -43,9 +47,13 @@ export class TeamsService {
   constructor(private readonly prisma: PrismaService) {}
 
   getOAuthUrl(userId: number): string {
-    const state = jwt.sign({ userId, purpose: 'teams-install' }, this.jwtSecret(), {
-      expiresIn: '10m',
-    });
+    const state = jwt.sign(
+      { userId, purpose: 'teams-install' },
+      this.jwtSecret(),
+      {
+        expiresIn: '10m',
+      },
+    );
     const params = new URLSearchParams({
       client_id: this.clientId(),
       response_type: 'code',
@@ -68,7 +76,9 @@ export class TeamsService {
       }
       return payload.userId;
     } catch {
-      throw new UnauthorizedException('Invalid or expired Teams connection link');
+      throw new UnauthorizedException(
+        'Invalid or expired Teams connection link',
+      );
     }
   }
 
@@ -87,7 +97,9 @@ export class TeamsService {
     });
     const tokens = await this.parseTokenResponse(response);
     if (!tokens.refresh_token) {
-      throw new Error('Microsoft did not return a refresh token; verify offline_access consent');
+      throw new Error(
+        'Microsoft did not return a refresh token; verify offline_access consent',
+      );
     }
 
     const profile = await this.fetchProfile(tokens.access_token);
@@ -96,7 +108,9 @@ export class TeamsService {
       data: {
         teamsAccessToken: tokens.access_token,
         teamsRefreshToken: tokens.refresh_token,
-        teamsAccessTokenExpiresAt: new Date(Date.now() + Number(tokens.expires_in) * 1000),
+        teamsAccessTokenExpiresAt: new Date(
+          Date.now() + Number(tokens.expires_in) * 1000,
+        ),
         teamsUserId: profile.id,
         teamsUserEmail: profile.mail ?? profile.userPrincipalName ?? null,
         teamsEnabled: true,
@@ -120,12 +134,19 @@ export class TeamsService {
       },
     });
     if (!user) return { error: 'User not found' };
-    return { ...user, channelSelected: Boolean(user.teamsTeamId && user.teamsChannelId) };
+    return {
+      ...user,
+      channelSelected: Boolean(user.teamsTeamId && user.teamsChannelId),
+    };
   }
 
   async updateSettings(
     userId: number,
-    settings: { newCaptureNotifications?: boolean; weeklyRecapEnabled?: boolean; timezone?: string },
+    settings: {
+      newCaptureNotifications?: boolean;
+      weeklyRecapEnabled?: boolean;
+      timezone?: string;
+    },
   ) {
     const data: {
       teamsNewCaptureNotifications?: boolean;
@@ -140,7 +161,9 @@ export class TeamsService {
     }
     if (typeof settings.timezone === 'string' && settings.timezone.trim()) {
       try {
-        new Intl.DateTimeFormat('en-US', { timeZone: settings.timezone.trim() });
+        new Intl.DateTimeFormat('en-US', {
+          timeZone: settings.timezone.trim(),
+        });
       } catch {
         throw new BadRequestException('Invalid timezone');
       }
@@ -151,7 +174,10 @@ export class TeamsService {
   }
 
   async listTeams(userId: number): Promise<GraphTeam[]> {
-    return this.graphCollection<GraphTeam>(userId, '/me/joinedTeams?$select=id,displayName,description');
+    return this.graphCollection<GraphTeam>(
+      userId,
+      '/me/joinedTeams?$select=id,displayName,description',
+    );
   }
 
   async listChannels(userId: number, teamId: string): Promise<GraphChannel[]> {
@@ -162,13 +188,19 @@ export class TeamsService {
     );
   }
 
-  async selectChannel(userId: number, teamId: string, channelId: string): Promise<void> {
+  async selectChannel(
+    userId: number,
+    teamId: string,
+    channelId: string,
+  ): Promise<void> {
     if (!teamId?.trim() || !channelId?.trim()) {
       throw new BadRequestException('A team ID and channel ID are required');
     }
     const channels = await this.listChannels(userId, teamId);
     if (!channels.some((channel) => channel.id === channelId)) {
-      throw new BadRequestException('The selected channel is not available in that team');
+      throw new BadRequestException(
+        'The selected channel is not available in that team',
+      );
     }
     await this.prisma.users.update({
       where: { id: userId },
@@ -214,9 +246,15 @@ export class TeamsService {
       ) {
         return;
       }
-      await this.sendMessage(userId, formatTeamsCapture(item, process.env.FRONTEND_URL));
+      await this.sendMessage(
+        userId,
+        formatTeamsCapture(item, process.env.FRONTEND_URL),
+      );
     } catch (err) {
-      this.logger.error(`Teams capture notification failed for user ${userId}`, err as Error);
+      this.logger.error(
+        `Teams capture notification failed for user ${userId}`,
+        err as Error,
+      );
     }
   }
 
@@ -240,19 +278,29 @@ export class TeamsService {
       try {
         if (await this.sendIfNotSent(user.id, now)) sent += 1;
       } catch (err) {
-        this.logger.error(`Teams weekly recap failed for user ${user.id}`, err as Error);
+        this.logger.error(
+          `Teams weekly recap failed for user ${user.id}`,
+          err as Error,
+        );
       }
     }
     if (sent > 0) this.logger.log(`Sent ${sent} Teams weekly recap(s)`);
     return sent;
   }
 
-  async buildRecap(userId: number, now: Date = new Date()): Promise<TeamsWeeklyRecap> {
+  async buildRecap(
+    userId: number,
+    now: Date = new Date(),
+  ): Promise<TeamsWeeklyRecap> {
     const weekAgo = new Date(now.getTime() - 7 * 86_400_000);
     const select = { id: true, title: true, personName: true } as const;
     const [resolved, waiting, pinned] = await Promise.all([
       this.prisma.workItem.findMany({
-        where: { userId, status: 'RESOLVED', resolvedAt: { gte: weekAgo, lte: now } },
+        where: {
+          userId,
+          status: 'RESOLVED',
+          resolvedAt: { gte: weekAgo, lte: now },
+        },
         orderBy: { resolvedAt: 'desc' },
         select,
       }),
@@ -276,7 +324,11 @@ export class TeamsService {
         id: userId,
         OR: [
           { lastTeamsWeeklyRecapAt: null },
-          { lastTeamsWeeklyRecapAt: { lt: new Date(now.getTime() - RECAP_GAP_MS) } },
+          {
+            lastTeamsWeeklyRecapAt: {
+              lt: new Date(now.getTime() - RECAP_GAP_MS),
+            },
+          },
         ],
       },
       data: { lastTeamsWeeklyRecapAt: now },
@@ -315,25 +367,36 @@ export class TeamsService {
     });
   }
 
-  private async assertJoinedTeam(userId: number, teamId: string): Promise<void> {
+  private async assertJoinedTeam(
+    userId: number,
+    teamId: string,
+  ): Promise<void> {
     const teams = await this.listTeams(userId);
     if (!teams.some((team) => team.id === teamId)) {
-      throw new BadRequestException('The selected team is not available to the connected account');
+      throw new BadRequestException(
+        'The selected team is not available to the connected account',
+      );
     }
   }
 
-  private async graphCollection<T>(userId: number, initialPath: string): Promise<T[]> {
+  private async graphCollection<T>(
+    userId: number,
+    initialPath: string,
+  ): Promise<T[]> {
     const results: T[] = [];
     let next: string | undefined = `${GRAPH_URL}${initialPath}`;
     while (next) {
       const nextUrl = new URL(next);
-      if (nextUrl.protocol !== 'https:' || nextUrl.hostname !== 'graph.microsoft.com') {
+      if (
+        nextUrl.protocol !== 'https:' ||
+        nextUrl.hostname !== 'graph.microsoft.com'
+      ) {
         throw new Error('Microsoft Graph returned an invalid pagination URL');
       }
-      const page = await this.graphRequest<{ value?: T[]; '@odata.nextLink'?: string }>(
-        userId,
-        nextUrl.toString(),
-      );
+      const page = await this.graphRequest<{
+        value?: T[];
+        '@odata.nextLink'?: string;
+      }>(userId, nextUrl.toString());
       results.push(...(page.value ?? []));
       next = page['@odata.nextLink'];
     }
@@ -345,7 +408,9 @@ export class TeamsService {
     pathOrUrl: string,
     init: RequestInit = {},
   ): Promise<T> {
-    const url = pathOrUrl.startsWith('https://') ? pathOrUrl : `${GRAPH_URL}${pathOrUrl}`;
+    const url = pathOrUrl.startsWith('https://')
+      ? pathOrUrl
+      : `${GRAPH_URL}${pathOrUrl}`;
     let token = await this.accessToken(userId);
     let response = await fetch(url, {
       ...init,
@@ -361,12 +426,17 @@ export class TeamsService {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const message = payload?.error?.message || response.statusText;
-      throw new Error(`Microsoft Graph request failed (${response.status}): ${message}`);
+      throw new Error(
+        `Microsoft Graph request failed (${response.status}): ${message}`,
+      );
     }
     return payload as T;
   }
 
-  private async accessToken(userId: number, forceRefresh = false): Promise<string> {
+  private async accessToken(
+    userId: number,
+    forceRefresh = false,
+  ): Promise<string> {
     const user = await this.prisma.users.findUnique({
       where: { id: userId },
       select: {
@@ -382,7 +452,8 @@ export class TeamsService {
       !forceRefresh &&
       user.teamsAccessToken &&
       user.teamsAccessTokenExpiresAt &&
-      user.teamsAccessTokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_MARGIN_MS
+      user.teamsAccessTokenExpiresAt.getTime() >
+        Date.now() + TOKEN_REFRESH_MARGIN_MS
     ) {
       return user.teamsAccessToken;
     }
@@ -411,15 +482,22 @@ export class TeamsService {
     return tokens.access_token;
   }
 
-  private async parseTokenResponse(response: Response): Promise<MicrosoftTokens> {
+  private async parseTokenResponse(
+    response: Response,
+  ): Promise<MicrosoftTokens> {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || !payload.access_token) {
       throw new Error(
         `Microsoft token request failed (${response.status}): ${payload.error_description || response.statusText}`,
       );
     }
-    if (!Number.isFinite(Number(payload.expires_in)) || Number(payload.expires_in) <= 0) {
-      throw new Error('Microsoft token response did not include a valid expiry');
+    if (
+      !Number.isFinite(Number(payload.expires_in)) ||
+      Number(payload.expires_in) <= 0
+    ) {
+      throw new Error(
+        'Microsoft token response did not include a valid expiry',
+      );
     }
     return payload as MicrosoftTokens;
   }
@@ -429,12 +507,17 @@ export class TeamsService {
     mail?: string;
     userPrincipalName?: string;
   }> {
-    const response = await fetch(`${GRAPH_URL}/me?$select=id,mail,userPrincipalName`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const response = await fetch(
+      `${GRAPH_URL}/me?$select=id,mail,userPrincipalName`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      },
+    );
     const profile = await response.json().catch(() => ({}));
     if (!response.ok || !profile.id) {
-      throw new Error(`Could not read the Microsoft account profile (${response.status})`);
+      throw new Error(
+        `Could not read the Microsoft account profile (${response.status})`,
+      );
     }
     return profile;
   }
