@@ -42,6 +42,131 @@ export function formatTodayReply(items: DigestItem[], frontendUrl?: string): str
   return `*Your top ${items.length} for today*\n${lines.join('\n')}${appLink(frontendUrl)}`;
 }
 
+// ---- /today with a "⋯" menu per item (Block Kit) ----------------------------
+
+export const TODAY_MENU_ACTION_PREFIX = 'today_item_menu';
+export const TODAY_ACTIONS = ['done', 'tomorrow', 'next_week'] as const;
+export type TodayAction = (typeof TODAY_ACTIONS)[number];
+
+const TODAY_ACTION_LABELS: Record<TodayAction, string> = {
+  done: 'Mark done',
+  tomorrow: 'Tomorrow 9 am',
+  next_week: 'Next week',
+};
+
+export function encodeTodayAction(action: TodayAction, itemId: string): string {
+  return `${action}:${itemId}`;
+}
+
+export function parseTodayAction(value: unknown): { action: TodayAction; itemId: string } | null {
+  const raw = String(value ?? '');
+  const sep = raw.indexOf(':');
+  if (sep <= 0) return null;
+  const action = raw.slice(0, sep);
+  const itemId = raw.slice(sep + 1);
+  if (!itemId || !(TODAY_ACTIONS as readonly string[]).includes(action)) return null;
+  return { action: action as TodayAction, itemId };
+}
+
+export interface SlackMessage {
+  text: string;
+  blocks: Record<string, unknown>[];
+}
+
+/**
+ * The /today reply as Block Kit: one section per item with an overflow ("⋯")
+ * menu. `notice` is the confirmation line shown after a menu action, when the
+ * reply is re-rendered in place.
+ */
+export function formatTodayBlocks(
+  items: DigestItem[],
+  frontendUrl?: string,
+  notice?: string,
+): SlackMessage {
+  const blocks: Record<string, unknown>[] = [];
+  if (notice) {
+    blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: notice }] });
+  }
+
+  if (items.length === 0) {
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: 'Nothing needs you today. 🎉' } });
+  } else {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Your top ${items.length} for today*` },
+    });
+    items.forEach((item, i) => {
+      const section: Record<string, unknown> = {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `${i + 1}. ${slackLink(item, frontendUrl)}` },
+      };
+      if (item.id) {
+        section.accessory = {
+          type: 'overflow',
+          action_id: `${TODAY_MENU_ACTION_PREFIX}_${i}`,
+          options: TODAY_ACTIONS.map((action) => ({
+            text: { type: 'plain_text', text: TODAY_ACTION_LABELS[action] },
+            value: encodeTodayAction(action, item.id!),
+          })),
+        };
+      }
+      blocks.push(section);
+    });
+  }
+
+  if (frontendUrl) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `<${frontendUrl}|Open Inlooped>` }],
+    });
+  }
+
+  const fallback = formatTodayReply(items, frontendUrl);
+  return { text: notice ? `${notice}\n${fallback}` : fallback, blocks };
+}
+
+/** The confirmation line after a /today menu action. */
+export function todayActionNotice(action: TodayAction, title: string): string {
+  const shown = escapeSlack(title.length > 60 ? `${title.slice(0, 57)}...` : title);
+  switch (action) {
+    case 'done':
+      return `✅ Marked *${shown}* done.`;
+    case 'tomorrow':
+      return `💤 Snoozed *${shown}* until tomorrow, 9 am.`;
+    case 'next_week':
+      return `💤 Snoozed *${shown}* until Monday, 9 am.`;
+  }
+}
+
+// ---- Waiting-on nudge DM -----------------------------------------------------
+
+export interface NudgeItem extends DigestItem {
+  occurredAt: Date;
+}
+
+const DAY_MS = 86_400_000;
+
+export function quietDays(occurredAt: Date, now: Date): number {
+  return Math.max(0, Math.floor((now.getTime() - occurredAt.getTime()) / DAY_MS));
+}
+
+export function formatSlackWaitingNudge(
+  items: NudgeItem[],
+  thresholdDays: number,
+  now: Date,
+  frontendUrl?: string,
+): string {
+  const lines = items.map((item) => {
+    const who = item.personName ? `${escapeSlack(item.personName)} — ` : '';
+    return `• ${who}${slackLink(item, frontendUrl)} · ${quietDays(item.occurredAt, now)} days`;
+  });
+  return [
+    `⏳ *No reply for ${thresholdDays}+ days*`,
+    lines.join('\n'),
+    `_Worth a follow-up? Each item is only nudged once. Change this in Inlooped settings._${appLink(frontendUrl)}`,
+  ].join('\n\n');
+}
+
 export interface WeeklyRecap {
   resolved: DigestItem[];
   waiting: DigestItem[];

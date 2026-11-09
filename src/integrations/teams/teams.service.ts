@@ -130,6 +130,7 @@ export class TeamsService {
         teamsChannelId: true,
         teamsNewCaptureNotifications: true,
         teamsWeeklyRecapEnabled: true,
+        teamsTodayDigestEnabled: true,
         teamsTimezone: true,
       },
     });
@@ -145,12 +146,14 @@ export class TeamsService {
     settings: {
       newCaptureNotifications?: boolean;
       weeklyRecapEnabled?: boolean;
+      todayDigestEnabled?: boolean;
       timezone?: string;
     },
   ) {
     const data: {
       teamsNewCaptureNotifications?: boolean;
       teamsWeeklyRecapEnabled?: boolean;
+      teamsTodayDigestEnabled?: boolean;
       teamsTimezone?: string;
     } = {};
     if (typeof settings.newCaptureNotifications === 'boolean') {
@@ -158,6 +161,9 @@ export class TeamsService {
     }
     if (typeof settings.weeklyRecapEnabled === 'boolean') {
       data.teamsWeeklyRecapEnabled = settings.weeklyRecapEnabled;
+    }
+    if (typeof settings.todayDigestEnabled === 'boolean') {
+      data.teamsTodayDigestEnabled = settings.todayDigestEnabled;
     }
     if (typeof settings.timezone === 'string' && settings.timezone.trim()) {
       try {
@@ -351,7 +357,8 @@ export class TeamsService {
     }
   }
 
-  private async sendMessage(userId: number, html: string): Promise<void> {
+  /** Posts HTML to the user's selected Teams channel. Throws on failure. */
+  async sendMessage(userId: number, html: string): Promise<void> {
     const user = await this.prisma.users.findUnique({
       where: { id: userId },
       select: { teamsTeamId: true, teamsChannelId: true },
