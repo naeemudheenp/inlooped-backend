@@ -84,55 +84,6 @@ export function formatTeamsCapture(
   return `<p><b>New ${escapeHtml(item.kind.toLowerCase())} captured</b></p><p>${link}</p>`;
 }
 
-export interface TeamsTodayItem extends TeamsDigestItem {
-  /** "waiting on Ravi", "3 messages", "since Thursday" */
-  meta?: string | null;
-}
-
-/** Weekday 9 am post: the user's top open items. */
-export function formatTeamsTodayDigest(
-  items: TeamsTodayItem[],
-  frontendUrl?: string,
-): string {
-  const lines = items.map((item) => {
-    const meta = item.meta ? ` <i>— ${escapeHtml(item.meta)}</i>` : '';
-    return `<li>${itemLabel(item, frontendUrl)}${meta}</li>`;
-  });
-  return [
-    `<h2>Your top ${items.length} for today</h2>`,
-    `<ol>${lines.join('')}</ol>`,
-    `<p><i>You can turn this daily digest off in Teams settings in Inlooped.</i>${
-      frontendUrl ? ` <a href="${escapeHtml(frontendUrl)}">Open Inlooped</a>` : ''
-    }</p>`,
-  ].join('');
-}
-
-export interface TeamsNudgeItem extends TeamsDigestItem {
-  occurredAt: Date;
-}
-
-/** "No reply for N+ days" — WAITING items gone quiet. */
-export function formatTeamsWaitingNudge(
-  items: TeamsNudgeItem[],
-  thresholdDays: number,
-  now: Date,
-  frontendUrl?: string,
-): string {
-  const lines = items.map((item) => {
-    const who = item.personName ? `${escapeHtml(item.personName)} — ` : '';
-    const days = Math.max(
-      0,
-      Math.floor((now.getTime() - item.occurredAt.getTime()) / 86_400_000),
-    );
-    return `<li>${who}${itemLabel(item, frontendUrl)} · ${days} days</li>`;
-  });
-  return [
-    `<p><b>⏳ No reply for ${thresholdDays}+ days</b></p>`,
-    `<ul>${lines.join('')}</ul>`,
-    '<p><i>Worth a follow-up? Each item is only nudged once. Change this in Inlooped settings.</i></p>',
-  ].join('');
-}
-
 export function isTeamsRecapDue(now: Date, timeZone?: string | null): boolean {
   const read = (tz: string) => {
     const parts = new Intl.DateTimeFormat('en-US', {

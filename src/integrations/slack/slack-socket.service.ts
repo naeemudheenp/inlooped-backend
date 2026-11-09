@@ -47,15 +47,11 @@ export class SlackSocketService implements OnModuleInit {
 			await this.events.handleEvent(event, body?.team_id);
 		});
 
-		// Interactivity: the "Send to Inlooped" message shortcut, and the "⋯"
-		// menu on /today items.
+		// Interactivity: the "Send to Inlooped" message shortcut.
 		this.client.on('interactive', async ({ ack, body }: any) => {
 			await this.safeAck(ack);
 			if (body?.type === 'message_action') {
 				await this.events.handleShortcut(body);
-			}
-			if (body?.type === 'block_actions') {
-				await this.events.handleBlockActions(body);
 			}
 		});
 
@@ -64,8 +60,8 @@ export class SlackSocketService implements OnModuleInit {
 		this.client.on('slash_commands', async ({ ack, body }: any) => {
 			const command = slashCommandName(body?.command);
 			if (command === 'today') {
-				const reply = await this.events.handleTodayCommand(body);
-				await this.safeAck(ack, { response_type: 'ephemeral', ...reply });
+				const text = await this.events.handleTodayCommand(body);
+				await this.safeAck(ack, { response_type: 'ephemeral', text });
 				return;
 			}
 			await this.safeAck(ack);

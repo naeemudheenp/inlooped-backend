@@ -8,8 +8,6 @@ import {
   isDormant,
   metaLabel,
 } from './surface.scoring';
-import { isValidTimeZone, preferredTimezone } from '../common/time.util';
-import { SnoozePreset, snoozePresetTime } from './snooze-presets';
 
 export interface SurfacedItem {
   id: string;
@@ -237,84 +235,6 @@ export class SurfaceService {
     });
     if (count === 0) throw new NotFoundException('Item not found');
     return until;
-  }
-
-  /**
-   * Snooze to a named preset ("tonight", "tomorrow", "next_week") in the
-   * user's time zone. An explicit, valid `timezone` (the browser's) wins over
-   * the one stored on the user.
-   */
-  async snoozeToPreset(
-    userId: number,
-    itemId: string,
-    preset: SnoozePreset,
-    timezone?: string | null,
-    now: Date = new Date(),
-  ): Promise<Date> {
-    const tz = await this.resolveTimezone(userId, timezone);
-    const until = snoozePresetTime(preset, now, tz);
-    if (!until) {
-      throw new BadRequestException('It is already past 6 pm — pick tomorrow or next week instead');
-    }
-    return this.snooze(userId, itemId, until, now);
-  }
-
-  /**
-   * Bring a snoozed item back early. snoozedUntil is set to *now* rather than
-   * cleared, so the item lands in today's group exactly as if its snooze had
-   * just run out.
-   */
-  async unsnooze(userId: number, itemId: string, now: Date = new Date()): Promise<SurfacedItem> {
-    const item = await this.findForUser(userId, itemId);
-    if (!item) throw new NotFoundException('Item not found');
-    if (!item.snoozedUntil || item.snoozedUntil.getTime() <= now.getTime()) {
-      return this.present(item); // not snoozed — nothing to undo
-    }
-    const updated = await this.prisma.workItem.update({
-      where: { id: item.id },
-      data: { snoozedUntil: now },
-    });
-    return this.present(updated);
-  }
-
-  /** Everything currently snoozed, soonest to return first. */
-  async listSnoozed(userId: number, now: Date = new Date()): Promise<SurfacedItem[]> {
-    const items = await this.prisma.workItem.findMany({
-      where: { userId, status: { not: 'DISMISSED' }, snoozedUntil: { gt: now } },
-      orderBy: { snoozedUntil: 'asc' },
-      take: 200,
-    });
-    return items.map((i) => this.present(i));
-  }
-
-  /**
-   * Idempotent "done" — unlike resolve(), a second click never reopens the
-   * item. Returns null when the item doesn't exist for this user.
-   */
-  async markDone(userId: number, itemId: string): Promise<WorkItem | null> {
-    const item = await this.findForUser(userId, itemId);
-    if (!item) return null;
-    if (item.status === 'RESOLVED') return item;
-    return this.prisma.workItem.update({
-      where: { id: item.id },
-      data: { status: 'RESOLVED', resolvedAt: new Date(), surfaceScore: 0 },
-    });
-  }
-
-  /** A live (non-dismissed) item owned by the user. */
-  async findForUser(userId: number, itemId: string): Promise<WorkItem | null> {
-    return this.prisma.workItem.findFirst({
-      where: { id: itemId, userId, status: { not: 'DISMISSED' } },
-    });
-  }
-
-  async resolveTimezone(userId: number, requested?: string | null): Promise<string> {
-    if (isValidTimeZone(requested)) return requested;
-    const user = await this.prisma.users.findUnique({
-      where: { id: userId },
-      select: { slackEnabled: true, slackTimezone: true, teamsEnabled: true, teamsTimezone: true },
-    });
-    return preferredTimezone(user);
   }
 
   /** Exposed for the "may have gone away" copy in tests. */

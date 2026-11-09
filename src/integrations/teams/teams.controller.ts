@@ -71,7 +71,6 @@ export class TeamsController {
     return this.teams.updateSettings(this.userId(req), {
       newCaptureNotifications: body?.newCaptureNotifications,
       weeklyRecapEnabled: body?.weeklyRecapEnabled,
-      todayDigestEnabled: body?.todayDigestEnabled,
       timezone: body?.timezone,
     });
   }

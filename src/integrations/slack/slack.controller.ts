@@ -98,7 +98,7 @@ export class SlackController {
     return { ok: true };
   }
 
-  // ---- Inbound: Interactivity (message shortcut, /today menu actions) ----
+  // ---- Inbound: Interactivity (message shortcut "Save to OpenNotepad") ----
   @Post('interactivity')
   async interactivity(
     @Req() req: RawBodyRequest<Request>,
@@ -119,11 +119,6 @@ export class SlackController {
 
     if (payload.type === 'message_action') {
       void this.slackEvents.handleShortcut(payload);
-    }
-    // "⋯" menu picks on the /today reply. The reply is updated via
-    // response_url, so the ack itself stays empty.
-    if (payload.type === 'block_actions') {
-      void this.slackEvents.handleBlockActions(payload);
     }
     return {};
   }
@@ -148,8 +143,8 @@ export class SlackController {
     }
 
     if (command === 'today') {
-      const reply = await this.slackEvents.handleTodayCommand(body);
-      return { response_type: 'ephemeral', ...reply };
+      const text = await this.slackEvents.handleTodayCommand(body);
+      return { response_type: 'ephemeral', text };
     }
 
     if (!body?.text?.trim()) {

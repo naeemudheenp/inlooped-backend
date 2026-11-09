@@ -244,7 +244,7 @@ export class SlackService {
     text: string,
     channelId?: string,
     threadTs?: string,
-  ): Promise<boolean> {
+  ) {
     // Attempt 1: Try posting to the channel/thread if channelId was provided
     if (channelId) {
       const payload: any = {
@@ -266,7 +266,7 @@ export class SlackService {
 
       const data = await res.json();
       if (data.ok) {
-        return true; // Successfully posted in target channel/thread
+        return; // Successfully posted in target channel/thread
       }
       console.log(
         `Notice: Could not post directly to channel ${channelId} (${data.error}). Falling back to DM with user ${slackUserId}.`,
@@ -286,7 +286,7 @@ export class SlackService {
     const dmData = await dmRes.json();
     if (!dmData.ok) {
       console.error('DM-open-error:', dmData);
-      return false;
+      return;
     }
 
     const fallbackRes = await fetch('https://slack.com/api/chat.postMessage', {
@@ -304,38 +304,7 @@ export class SlackService {
     const fallbackData = await fallbackRes.json();
     if (!fallbackData.ok) {
       console.error('Failed to post fallback DM message:', fallbackData);
-      return false;
     }
-    return true;
-  }
-
-  /**
-   * Replies through an interaction's `response_url` — the only way to update
-   * an ephemeral message (like the /today reply) in place. The URL comes from
-   * Slack's payload, so only Slack's own hook host is accepted.
-   */
-  async respond(responseUrl: string | undefined, body: Record<string, unknown>): Promise<boolean> {
-    let url: URL;
-    try {
-      url = new URL(String(responseUrl));
-    } catch {
-      console.warn('Slack respond: missing or invalid response_url');
-      return false;
-    }
-    if (url.protocol !== 'https:' || url.hostname !== 'hooks.slack.com') {
-      console.warn(`Slack respond: refusing non-Slack response_url host ${url.hostname}`);
-      return false;
-    }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      console.warn(`Slack respond failed (${res.status}): ${await res.text().catch(() => '')}`);
-      return false;
-    }
-    return true;
   }
 
   async listChannels(botToken: string): Promise<any[]> {

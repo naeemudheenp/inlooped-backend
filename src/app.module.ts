@@ -15,7 +15,6 @@ import { AgentModule } from './agent/agent.module';
 import { JournalModule } from './journal/journal.module';
 import { SlackModule } from './integrations/slack/slack.module';
 import { GoogleCalendarModule } from './integrations/google/google-calendar.module';
-import { NudgesModule } from './nudges/nudges.module';
 
 @Module({
   imports: [
@@ -31,7 +30,6 @@ import { NudgesModule } from './nudges/nudges.module';
     JournalModule,
     SlackModule,
     GoogleCalendarModule,
-    NudgesModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],

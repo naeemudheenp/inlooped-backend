@@ -2,14 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SlackService } from './slack.service';
 import { IngestService, CaptureRoute } from '../../ingest/ingest.service';
 import { SurfaceService } from '../../surface/surface.service';
-import {
-  SlackMessage,
-  TODAY_MENU_ACTION_PREFIX,
-  TodayAction,
-  formatTodayBlocks,
-  parseTodayAction,
-  todayActionNotice,
-} from './slack-digest.format';
+import { formatTodayReply } from './slack-digest.format';
 
 export const SLASH_COMMANDS = ['remember', 'today'] as const;
 export type SlashCommand = (typeof SLASH_COMMANDS)[number];
@@ -169,90 +162,26 @@ export class SlackEventsService {
     await this.confirm(user, this.confirmation(route));
   }
 
-  /** `/today` — top open items, each with a "⋯" menu (done / tomorrow / next week). */
   async handleTodayCommand(payload: {
     user_id?: string;
     team_id?: string;
-  }): Promise<SlackMessage | { text: string }> {
+  }): Promise<string> {
     if (!payload.user_id || !payload.team_id) {
-      return { text: "I couldn't tell who you are — try again." };
+      return "I couldn't tell who you are — try again.";
     }
 
     const user = await this.slack.findUserBySlack(payload.user_id, payload.team_id);
     if (!user) {
-      return { text: 'Connect Slack in Inlooped settings first, then try `/today` again.' };
+      return 'Connect Slack in Inlooped settings first, then try `/today` again.';
     }
 
     try {
       const items = await this.surface.topOpen(user.id, TODAY_COMMAND_LIMIT);
-      return formatTodayBlocks(items, process.env.FRONTEND_URL);
+      return formatTodayReply(items, process.env.FRONTEND_URL);
     } catch (err) {
       this.logger.error(`/today failed for user ${user.id}`, err as Error);
-      return { text: "Sorry, I couldn't load today's items. Try again in a moment." };
+      return "Sorry, I couldn't load today's items. Try again in a moment.";
     }
-  }
-
-  /**
-   * A pick from a /today "⋯" menu. Applies it, then replaces the private
-   * reply in place: the refreshed list with a confirmation line on top.
-   */
-  async handleBlockActions(payload: any): Promise<void> {
-    const action = (payload?.actions ?? []).find((a: any) =>
-      String(a?.action_id ?? '').startsWith(TODAY_MENU_ACTION_PREFIX),
-    );
-    if (!action) return;
-
-    const parsed = parseTodayAction(action.selected_option?.value);
-    const responseUrl: string | undefined = payload?.response_url;
-    const slackUserId = payload?.user?.id;
-    const teamId = payload?.team?.id ?? payload?.user?.team_id;
-    if (!parsed || !slackUserId || !teamId) return;
-
-    const user = await this.slack.findUserBySlack(slackUserId, teamId);
-    if (!user) {
-      await this.slack.respond(responseUrl, {
-        replace_original: true,
-        response_type: 'ephemeral',
-        text: 'Connect Slack in Inlooped settings first, then try `/today` again.',
-      });
-      return;
-    }
-
-    let notice: string;
-    try {
-      notice = await this.applyTodayAction(user, parsed.action, parsed.itemId);
-    } catch (err) {
-      this.logger.error(`/today action ${parsed.action} failed for user ${user.id}`, err as Error);
-      notice = "⚠️ Sorry, I couldn't update that item. Try again in a moment.";
-    }
-
-    try {
-      const items = await this.surface.topOpen(user.id, TODAY_COMMAND_LIMIT);
-      await this.slack.respond(responseUrl, {
-        replace_original: true,
-        response_type: 'ephemeral',
-        ...formatTodayBlocks(items, process.env.FRONTEND_URL, notice),
-      });
-    } catch (err) {
-      this.logger.error(`Failed to refresh /today for user ${user.id}`, err as Error);
-    }
-  }
-
-  private async applyTodayAction(
-    user: { id: number; slackTimezone?: string | null },
-    action: TodayAction,
-    itemId: string,
-  ): Promise<string> {
-    // Ownership check: the item must belong to the Slack user who clicked.
-    const item = await this.surface.findForUser(user.id, itemId);
-    if (!item) return '⚠️ That item is no longer in Inlooped.';
-
-    if (action === 'done') {
-      await this.surface.markDone(user.id, item.id);
-    } else {
-      await this.surface.snoozeToPreset(user.id, item.id, action, user.slackTimezone);
-    }
-    return todayActionNotice(action, item.title);
   }
 
   // -- internals -----------------------------------------------------------

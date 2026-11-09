@@ -1,21 +1,9 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Inject,
-  Param,
-  Post,
-  Query,
-  Req,
-  UseGuards,
-} from '@nestjs/common';
-import { IsDateString, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { Body, Controller, Get, Inject, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { IsDateString, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { AuthenticatedRequest, JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { LLM_SERVICE, LlmService } from '../llm/llm.types';
 import { MeteredLlmService } from '../llm/metered-llm.service';
 import { SurfaceService } from '../surface/surface.service';
-import { SNOOZE_PRESETS, SnoozePreset, listSnoozePresets } from '../surface/snooze-presets';
 import { AgentService } from './agent.service';
 import { IngestService } from '../ingest/ingest.service';
 import { GoogleCalendarService } from '../integrations/google/google-calendar.service';
@@ -48,28 +36,9 @@ export class TodayQueryDto {
   date?: string;
 }
 
-/** Exactly one of `until` (an exact instant) or `preset` is required. */
 export class SnoozeDto {
-  @IsOptional()
   @IsDateString()
-  until?: string;
-
-  @IsOptional()
-  @IsIn(SNOOZE_PRESETS as unknown as string[])
-  preset?: SnoozePreset;
-
-  /** IANA zone the preset is resolved in (e.g. the browser's). Defaults to the user's. */
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  timezone?: string;
-}
-
-export class SnoozePresetsQueryDto {
-  @IsOptional()
-  @IsString()
-  @MaxLength(64)
-  timezone?: string;
+  until!: string;
 }
 
 @Controller('agent')
@@ -171,35 +140,8 @@ export class AgentController {
     @Param('id') id: string,
     @Body() body: SnoozeDto,
   ) {
-    if (Boolean(body.until) === Boolean(body.preset)) {
-      throw new BadRequestException('Send either "until" or "preset"');
-    }
-    const uid = userId(req);
-    const snoozedUntil = body.preset
-      ? await this.surface.snoozeToPreset(uid, id, body.preset, body.timezone)
-      : await this.surface.snooze(uid, id, new Date(body.until!));
+    const snoozedUntil = await this.surface.snooze(userId(req), id, new Date(body.until));
     return { ok: true, snoozedUntil };
-  }
-
-  /** Bring a snoozed item back now. */
-  @Post('items/:id/unsnooze')
-  async unsnooze(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
-    const item = await this.surface.unsnooze(userId(req), id);
-    return { ok: true, item };
-  }
-
-  /** Everything currently snoozed, soonest to return first. */
-  @Get('snoozed')
-  async snoozed(@Req() req: AuthenticatedRequest) {
-    const items = await this.surface.listSnoozed(userId(req));
-    return { items };
-  }
-
-  /** The snooze menu: each preset's exact time in the user's zone, and whether it's still reachable. */
-  @Get('snooze-presets')
-  async snoozePresets(@Req() req: AuthenticatedRequest, @Query() query: SnoozePresetsQueryDto) {
-    const timezone = await this.surface.resolveTimezone(userId(req), query.timezone);
-    return { timezone, presets: listSnoozePresets(new Date(), timezone) };
   }
 
   /**
