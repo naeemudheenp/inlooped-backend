@@ -39,6 +39,16 @@ model users {
   teamsWeeklyRecapEnabled       Boolean   @default(true)
   teamsTimezone                 String    @default("UTC")
   lastTeamsWeeklyRecapAt        DateTime?
+  /// Weekday 9 am "top five" post to the Teams channel. Opt-in.
+  teamsTodayDigestEnabled       Boolean   @default(false)
+  lastTeamsTodayDigestAt        DateTime?
+
+  /// "No reply for N+ days" reminders for WAITING items, 10 am on weekdays.
+  waitingNudgeSlack  Boolean   @default(true)
+  waitingNudgeTeams  Boolean   @default(true)
+  /// Days of silence before an item is nudged. 1–30, enforced by the API.
+  waitingNudgeDays   Int       @default(3)
+  lastWaitingNudgeAt DateTime?
 
   googleAccessToken  String?
   googleRefreshToken String?
@@ -101,6 +111,8 @@ model WorkItem {
   lastSurfacedAt DateTime?
   snoozedUntil   DateTime?
   resolvedAt     DateTime?
+  /// Set when a waiting-on nudge mentioned this item. Each item is nudged once.
+  nudgedAt       DateTime?
 
   occurredAt DateTime @default(now())
   createdAt  DateTime @default(now())
